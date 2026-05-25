@@ -5,6 +5,3 @@ services:
     environment:
       RUST_LOG: debug
 
-  crowdsec:
-    profiles:
-      - security
