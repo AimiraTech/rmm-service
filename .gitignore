@@ -1,0 +1,20 @@
+# User environment — never commit credentials
+.env
+
+# Runtime data — keys and database live here
+data/
+
+# Docker secrets — generated or restored, never source-controlled
+secrets/
+
+# SQLite artifacts — belt-and-suspenders (also inside data/)
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Local backup archives
+backups/
+
+# Caddy runtime (managed by Docker volumes, not repo)
+caddy-data/
+caddy-config/

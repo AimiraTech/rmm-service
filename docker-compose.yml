@@ -1,0 +1,83 @@
+services:
+  rustdesk:
+    image: rustdesk/rustdesk-server-s6:${RUSTDESK_IMAGE_TAG:-1.1.15}
+    container_name: rustdesk
+    network_mode: host
+    environment:
+      RELAY: "${RELAY_HOST}"
+      ENCRYPTED_ONLY: "1"
+      RUST_LOG: "${RUST_LOG:-info}"
+    volumes:
+      - ./data:/data
+    secrets:
+      - key_pub
+      - key_priv
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "s6-svstat", "/run/service/hbbs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    network_mode: host
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      rustdesk:
+        condition: service_healthy
+
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: crowdsec
+    networks:
+      - crowdsec-net
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      COLLECTIONS: "crowdsecurity/linux"
+      GID: "${GID:-1000}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - ./crowdsec/parsers:/etc/crowdsec/parsers/s02-enrich:ro
+      - /var/log:/var/log:ro
+      - crowdsec-data:/var/lib/crowdsec/data
+      - crowdsec-config:/etc/crowdsec
+    restart: unless-stopped
+
+  bouncer:
+    image: crowdsecurity/cs-firewall-bouncer:latest
+    container_name: bouncer
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      CROWDSEC_LAPI_URL: "http://localhost:8080"
+      CROWDSEC_LAPI_KEY: "${CROWDSEC_BOUNCER_KEY}"
+    depends_on:
+      - crowdsec
+    restart: unless-stopped
+
+secrets:
+  key_pub:
+    file: ./secrets/key_pub
+  key_priv:
+    file: ./secrets/key_priv
+
+volumes:
+  caddy-data:
+  caddy-config:
+  crowdsec-data:
+  crowdsec-config:
+
+networks:
+  crowdsec-net:
+    driver: bridge

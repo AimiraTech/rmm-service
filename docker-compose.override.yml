@@ -1,0 +1,14 @@
+# Development overrides — loaded automatically by docker compose when present.
+# Do NOT commit production secrets or use these settings in production.
+services:
+  rustdesk:
+    environment:
+      RUST_LOG: debug
+
+  caddy:
+    volumes:
+      - ./caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+
+  crowdsec:
+    profiles:
+      - security

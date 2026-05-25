@@ -1,0 +1,31 @@
+change: rmm-dockerized-rustdesk
+status: apply-complete
+artifact_store: openspec
+created: 2026-05-25
+phases:
+  explore:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/explore.md
+  propose:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/proposal.md
+  spec:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/spec.md
+  design:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/design.md
+  tasks:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/tasks.md
+  apply:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/apply-progress.md
+    completed: 2026-05-25
+  verify:
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/verify-report.md
+    completed: 2026-05-25
+    result: PASS with warnings
+  archive:
+    status: pending

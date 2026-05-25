@@ -1,0 +1,32 @@
+# Development Caddyfile — uses internal self-signed TLS.
+# No domain or ACME required. Loaded via docker-compose.override.yml.
+
+# TLS WebSocket proxy for hbbs (ID/rendezvous server)
+:21443 {
+    tls internal
+
+    reverse_proxy localhost:21118 {
+        flush_interval -1
+        transport http {
+            versions h1.1
+        }
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# TLS WebSocket proxy for hbbr (relay server)
+:21444 {
+    tls internal
+
+    reverse_proxy localhost:21119 {
+        flush_interval -1
+        transport http {
+            versions h1.1
+        }
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
