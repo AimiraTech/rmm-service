@@ -1,7 +1,8 @@
 change: rmm-dockerized-rustdesk
-status: apply-complete
+status: archived
 artifact_store: openspec
 created: 2026-05-25
+archived: 2026-05-25
 phases:
   explore:
     status: complete
@@ -28,4 +29,6 @@ phases:
     completed: 2026-05-25
     result: PASS with warnings
   archive:
-    status: pending
+    status: complete
+    artifact: openspec/changes/rmm-dockerized-rustdesk/archive-report.md
+    completed: 2026-05-25
