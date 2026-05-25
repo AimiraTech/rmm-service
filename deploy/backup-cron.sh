@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/rmm}"
+INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Cron usage: 0 3 * * * /opt/rmm/deploy/backup-cron.sh >> /var/log/rmm-backup.log 2>&1
 
