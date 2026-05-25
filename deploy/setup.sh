@@ -1,66 +1,84 @@
 #!/bin/sh
 set -eu
 
-# RMM Service — EC2 Bootstrap Script
-# Run once on a fresh EC2 instance to set up the RustDesk server stack.
-# Usage: curl -fsSL <raw-url>/deploy/setup.sh | sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/common.sh"
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/rmm}"
 IMAGE="ghcr.io/aimiratech/rmm-service:latest"
 
-echo "=== RMM Service Setup ==="
+print_header "rmm-service" "SETUP"
 
-# Install Docker if not present
+# [1] Check Docker
+step_start "Check Docker installation"
 if ! command -v docker >/dev/null 2>&1; then
-    echo "Installing Docker..."
-    curl -fsSL https://get.docker.com | sh
+    step_skip "Check Docker installation" "not installed, installing..."
+    curl -fsSL https://get.docker.com | sh 2>"$ERR_LOG"
     sudo usermod -aG docker "$USER"
-    echo "Docker installed. Log out and back in, then re-run this script."
+    info "Docker installed. Log out and back in, then re-run this script."
+    print_footer "ok" "SETUP"
     exit 0
 fi
+step_ok "Check Docker installation"
+info "$(docker --version)"
 
-# Verify docker compose v2
+# [2] Check Docker Compose v2
+step_start "Check Docker Compose v2"
 if ! docker compose version >/dev/null 2>&1; then
-    echo "ERROR: docker compose v2 not found. Install Docker Engine 24+." >&2
+    step_fail "Check Docker Compose v2" "not found — install Docker Engine 24+"
+    print_footer "fail" "SETUP"
     exit 1
 fi
+step_ok "Check Docker Compose v2"
+info "$(docker compose version)"
 
-# Create install directory
-echo "Setting up $INSTALL_DIR..."
-sudo mkdir -p "$INSTALL_DIR"
-sudo chown "$USER:$USER" "$INSTALL_DIR"
-
-# Pull and extract config image
-echo "Pulling config image..."
-docker pull "$IMAGE"
-docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/
-
-# Create runtime directories
-mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets" "$INSTALL_DIR/backups"
-
-# Create .env from template if it doesn't exist
-if [ ! -f "$INSTALL_DIR/.env" ]; then
-    cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
-    echo ""
-    echo "=== ACTION REQUIRED ==="
-    echo "Edit $INSTALL_DIR/.env and fill in:"
-    echo "  DOMAIN       — your public DNS name"
-    echo "  RELAY_HOST   — same as DOMAIN for single-server"
-    echo "  TLS_EMAIL    — for Let's Encrypt notifications"
-    echo ""
-    echo "Then run:"
-    echo "  cd $INSTALL_DIR && make up-d"
+# [3] Create install directory
+step_start "Create install directory"
+if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
+    step_skip "Create install directory" "already exists at $INSTALL_DIR"
 else
-    echo ".env already exists, skipping."
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo chown "$USER:$USER" "$INSTALL_DIR"
+    step_ok "Create install directory"
+    info "$INSTALL_DIR"
 fi
 
+# [4] Pull config image
+step_start "Pull config image"
+docker pull "$IMAGE" 2>"$ERR_LOG" | tail -1
+step_ok "Pull config image"
+info "$IMAGE"
+
+# [5] Extract configs
+step_start "Extract configs to $INSTALL_DIR"
+docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/ 2>"$ERR_LOG"
+step_ok "Extract configs to $INSTALL_DIR"
+
+# [6] Create runtime directories
+step_start "Create runtime directories"
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets" "$INSTALL_DIR/backups"
+step_ok "Create runtime directories"
+info "data/ secrets/ backups/"
+
+# [7] Initialize .env
+step_start "Initialize environment config"
+if [ -f "$INSTALL_DIR/.env" ]; then
+    step_skip "Initialize environment config" ".env already exists"
+else
+    cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+    step_ok "Initialize environment config"
+    info "Created .env from template — edit before starting"
+fi
+
+print_footer "ok" "SETUP"
+
+echo "  Next steps:"
 echo ""
-echo "=== Setup complete ==="
-echo "Next steps:"
-echo "  1. cd $INSTALL_DIR"
-echo "  2. nano .env              # configure DOMAIN, RELAY_HOST, TLS_EMAIL"
-echo "  3. make up-d              # start services"
-echo "  4. make status            # verify health"
-echo "  5. make keys-extract      # copy generated keys to secrets/"
-echo "  6. make backup            # first backup"
-echo "  7. make keys-show         # get public key for clients"
+printf "    ${CYAN}1.${RESET} cd %s\n" "$INSTALL_DIR"
+printf "    ${CYAN}2.${RESET} nano .env              ${DIM}# DOMAIN, RELAY_HOST, TLS_EMAIL${RESET}\n"
+printf "    ${CYAN}3.${RESET} make up-d              ${DIM}# start services${RESET}\n"
+printf "    ${CYAN}4.${RESET} make status            ${DIM}# verify health${RESET}\n"
+printf "    ${CYAN}5.${RESET} make keys-extract      ${DIM}# copy keys to secrets/${RESET}\n"
+printf "    ${CYAN}6.${RESET} make backup            ${DIM}# first backup${RESET}\n"
+printf "    ${CYAN}7.${RESET} make keys-show         ${DIM}# public key for clients${RESET}\n"
+echo ""
