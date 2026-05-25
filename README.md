@@ -25,27 +25,77 @@ This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, at
 
 ---
 
-## Quick Start
+## Deploy to EC2 (or any Linux VPS)
 
 ```sh
-# 1. Configure environment
-cp .env.example .env
-# Edit .env and fill in: DOMAIN, RELAY_HOST, TLS_EMAIL
+# 1. Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+exit
+# SSH back in for group to take effect
 
-# 2. Start all services
+# 2. Clone and configure
+git clone git@github.com:AimiraTech/rmm-service.git
+cd rmm-service
+cp .env.example .env
+nano .env   # Fill in: DOMAIN, RELAY_HOST, TLS_EMAIL
+
+# 3. Start all services
 make up-d
 
-# 3. Verify all services are healthy
+# 4. Wait ~15s, verify everything is healthy
 make status
 
-# 4. First run: extract auto-generated keys to secrets/
+# 5. Extract auto-generated keys to secrets/
 make keys-extract
 
-# 5. Get public key to configure clients
+# 6. First backup — BEFORE giving access to anyone
+make backup
+
+# 7. Get public key for client configuration
 make keys-show
+
+# 8. Configure CrowdSec bouncer
+docker compose exec crowdsec cscli bouncers add rmm-bouncer
+# Copy the key, add to .env as CROWDSEC_BOUNCER_KEY=<key>
+nano .env
+make down && make up-d
+
+# 9. Final verification
+make status
 ```
 
-On first startup, `rustdesk-server-s6` generates an Ed25519 keypair in `./data/`. Run `make keys-extract` to copy those keys to `secrets/` so they persist across container recreations. **Back up the keys immediately after step 4** — key loss requires reconfiguring every client in your fleet.
+**AWS Security Group inbound rules:**
+
+| Port  | Protocol | Source    | Purpose                        |
+|-------|----------|-----------|--------------------------------|
+| 22    | TCP      | Your IP   | SSH access                     |
+| 80    | TCP      | 0.0.0.0/0 | ACME challenge (Let's Encrypt) |
+| 21115 | TCP      | 0.0.0.0/0 | NAT type test                  |
+| 21116 | TCP      | 0.0.0.0/0 | Peer registration              |
+| 21116 | UDP      | 0.0.0.0/0 | Peer registration (hole-punch) |
+| 21117 | TCP      | 0.0.0.0/0 | Relay traffic                  |
+| 21443 | TCP      | 0.0.0.0/0 | WSS hbbs (Caddy TLS)           |
+| 21444 | TCP      | 0.0.0.0/0 | WSS hbbr (Caddy TLS)           |
+
+On first startup, `rustdesk-server-s6` generates an Ed25519 keypair in `./data/`. Run `make keys-extract` to copy those keys to `secrets/` so they persist across container recreations. **Back up the keys immediately** — key loss requires reconfiguring every client in your fleet.
+
+---
+
+## Quick Start (non-EC2)
+
+For any Linux host with Docker already installed:
+
+```sh
+git clone git@github.com:AimiraTech/rmm-service.git
+cd rmm-service
+cp .env.example .env
+# Edit .env: DOMAIN, RELAY_HOST, TLS_EMAIL
+make up-d
+make status
+make keys-extract
+make keys-show
+```
 
 ---
 
