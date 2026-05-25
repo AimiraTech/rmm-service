@@ -5,10 +5,6 @@ services:
     environment:
       RUST_LOG: debug
 
-  caddy:
-    volumes:
-      - ./caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
-
   crowdsec:
     profiles:
       - security

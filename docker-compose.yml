@@ -20,19 +20,6 @@ services:
       retries: 3
       start_period: 10s
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    network_mode: host
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    restart: unless-stopped
-    depends_on:
-      rustdesk:
-        condition: service_healthy
-
   crowdsec:
     image: crowdsecurity/crowdsec:latest
     container_name: crowdsec
@@ -73,8 +60,6 @@ secrets:
     file: ./secrets/key_priv
 
 volumes:
-  caddy-data:
-  caddy-config:
   crowdsec-data:
   crowdsec-config:
 
