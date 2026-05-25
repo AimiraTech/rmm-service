@@ -29,8 +29,8 @@ This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, at
 
 ```sh
 # 1. Clone the repo
-git clone git@github.com:AimiraTech/rmm-service.git /opt/rmm
-cd /opt/rmm
+git clone git@github.com:AimiraTech/rmm-service.git /home/aimiratech/rmm-service
+cd /home/aimiratech/rmm-service
 
 # 2. Run setup (installs Docker if needed, creates dirs, initializes .env)
 ./deploy/setup.sh
@@ -70,7 +70,7 @@ make status
 When a new release is pushed, pull and run the update script:
 
 ```sh
-cd /opt/rmm
+cd /home/aimiratech/rmm-service
 git pull
 ./deploy/update.sh
 ```
