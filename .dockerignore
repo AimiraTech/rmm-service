@@ -1,0 +1,13 @@
+.git/
+.github/
+.atl/
+.engram/
+.claude/
+openspec/
+data/
+secrets/
+backups/
+.env
+*.tar.gz
+*.md
+!README.md

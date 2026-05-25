@@ -34,35 +34,54 @@ sudo usermod -aG docker $USER
 exit
 # SSH back in for group to take effect
 
-# 2. Clone and configure
-git clone git@github.com:AimiraTech/rmm-service.git
-cd rmm-service
+# 2. Create deploy directory
+mkdir -p /opt/rmm && cd /opt/rmm
+
+# 3. Pull config image and extract
+docker pull ghcr.io/aimiratech/rmm-service:latest
+docker run --rm -v /opt/rmm:/out ghcr.io/aimiratech/rmm-service:latest cp -r /app/. /out/
+
+# 4. Configure
 cp .env.example .env
 nano .env   # Fill in: DOMAIN, RELAY_HOST, TLS_EMAIL
 
-# 3. Start all services
+# 5. Start all services
 make up-d
 
-# 4. Wait ~15s, verify everything is healthy
+# 6. Wait ~15s, verify everything is healthy
 make status
 
-# 5. Extract auto-generated keys to secrets/
+# 7. Extract auto-generated keys to secrets/
 make keys-extract
 
-# 6. First backup — BEFORE giving access to anyone
+# 8. First backup — BEFORE giving access to anyone
 make backup
 
-# 7. Get public key for client configuration
+# 9. Get public key for client configuration
 make keys-show
 
-# 8. Configure CrowdSec bouncer
+# 10. Configure CrowdSec bouncer
 docker compose exec crowdsec cscli bouncers add rmm-bouncer
 # Copy the key, add to .env as CROWDSEC_BOUNCER_KEY=<key>
 nano .env
 make down && make up-d
 
-# 9. Final verification
+# 11. Final verification
 make status
+```
+
+---
+
+## Updating
+
+When a new release is published, pull the latest config image and apply updates without touching runtime data:
+
+```sh
+# Pull latest config image
+docker pull ghcr.io/aimiratech/rmm-service:latest
+docker run --rm -v /opt/rmm:/out ghcr.io/aimiratech/rmm-service:latest cp -r /app/. /out/
+# This updates configs but preserves .env, data/, secrets/
+cd /opt/rmm && make update
 ```
 
 **AWS Security Group inbound rules:**
