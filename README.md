@@ -2,7 +2,7 @@
 
 A production-hardened Docker Compose deployment of [RustDesk Server OSS](https://github.com/rustdesk/rustdesk-server) for self-hosted remote access infrastructure. Designed for sysadmins managing a fleet of endpoints who need a secure, recoverable, operationally simple setup.
 
-This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, atomic backup/restore scripts, and a Makefile operational interface — all configured to deploy with a single `make up-d`.
+This repo provides atomic backup/restore scripts and a Makefile operational interface — configured to deploy with a single `make up-d`.
 
 ---
 
@@ -15,13 +15,9 @@ This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, at
 
 | Port  | Protocol | Purpose                                     |
 |-------|----------|---------------------------------------------|
-| 80    | TCP      | Caddy ACME challenge / HTTP→HTTPS redirect  |
-| 443   | TCP      | HTTPS                                       |
 | 21115 | TCP      | hbbs — NAT type test                        |
 | 21116 | TCP+UDP  | hbbs — peer registration (MUST be both!)    |
 | 21117 | TCP      | hbbr — relay traffic                        |
-| 21443 | TCP      | Caddy TLS WebSocket for hbbs                |
-| 21444 | TCP      | Caddy TLS WebSocket for hbbr                |
 
 ---
 
@@ -38,7 +34,7 @@ git sparse-checkout set deploy/
 ./deploy/setup.sh
 
 # 3. Configure
-nano .env   # Fill in: DOMAIN, RELAY_HOST, TLS_EMAIL
+nano .env   # Fill in: DOMAIN, RELAY_HOST
 
 # 4. Start all services
 make up-d
@@ -46,26 +42,14 @@ make up-d
 # 5. Wait ~15s, verify everything is healthy
 make status
 
-# 6. Extract auto-generated keys to secrets/
-make keys-extract
-
-# 7. First backup — BEFORE giving access to anyone
+# 6. First backup — BEFORE giving access to anyone
 make backup
 
-# 8. Get public key for client configuration
+# 7. Get public key for client configuration
 make keys-show
-
-# 9. Configure CrowdSec bouncer
-docker compose exec crowdsec cscli bouncers add rmm-bouncer
-# Copy the key, add to .env as CROWDSEC_BOUNCER_KEY=<key>
-nano .env
-make down && make up-d
-
-# 10. Final verification
-make status
 ```
 
-`setup.sh` pulls the config image from GHCR and extracts all files (docker-compose.yml, Makefile, Caddyfile, scripts, etc.) into the install directory. Only `deploy/` needs to exist beforehand.
+`setup.sh` pulls the config image from GHCR and extracts all files (docker-compose.yml, Makefile, scripts, etc.) into the install directory. Only `deploy/` needs to exist beforehand.
 
 ---
 
@@ -83,15 +67,12 @@ The update script is idempotent — it pulls the latest config image, extracts n
 | Port  | Protocol | Source    | Purpose                        |
 |-------|----------|-----------|--------------------------------|
 | 22    | TCP      | Your IP   | SSH access                     |
-| 80    | TCP      | 0.0.0.0/0 | ACME challenge (Let's Encrypt) |
 | 21115 | TCP      | 0.0.0.0/0 | NAT type test                  |
 | 21116 | TCP      | 0.0.0.0/0 | Peer registration              |
 | 21116 | UDP      | 0.0.0.0/0 | Peer registration (hole-punch) |
 | 21117 | TCP      | 0.0.0.0/0 | Relay traffic                  |
-| 21443 | TCP      | 0.0.0.0/0 | WSS hbbs (Caddy TLS)           |
-| 21444 | TCP      | 0.0.0.0/0 | WSS hbbr (Caddy TLS)           |
 
-On first startup, `rustdesk-server-s6` generates an Ed25519 keypair in `./data/`. Run `make keys-extract` to copy those keys to `secrets/` so they persist across container recreations. **Back up the keys immediately** — key loss requires reconfiguring every client in your fleet.
+`setup.sh` auto-generates Ed25519 keys on first install and writes them to `secrets/`. **Back up the keys immediately** — key loss requires reconfiguring every client in your fleet.
 
 ---
 
@@ -103,7 +84,7 @@ For any Linux host with Docker already installed:
 git clone git@github.com:AimiraTech/rmm-service.git
 cd rmm-service
 cp .env.example .env
-# Edit .env: DOMAIN, RELAY_HOST, TLS_EMAIL
+# Edit .env: DOMAIN, RELAY_HOST
 make up-d
 make status
 make keys-extract
@@ -117,56 +98,31 @@ make keys-show
 ```
                     Internet
                        │
-          ┌────────────┼────────────┐
-          │            │            │
-     TCP/UDP 21115-21117    TCP 21443/21444 (WSS via Caddy)
-          │            │            │
-          │            │         ┌──▼──┐
-          │            │         │Caddy│ ← auto TLS (ACME)
-          │            │         └──┬──┘
-          │            │            │
-     ┌────▼────────────▼────────────▼────┐
+          TCP/UDP 21115-21117
+                       │
+     ┌─────────────────▼─────────────────┐
      │  rustdesk-server-s6:1.1.15        │  network_mode: host
      │  ┌─────────┐  ┌─────────┐         │
      │  │  hbbs   │  │  hbbr   │         │
      │  │(ID/NAT) │  │(relay)  │         │
      │  └─────────┘  └─────────┘         │
      │       ENCRYPTED_ONLY=1            │
-     └──────────────┬────────────────────┘
-                    │ auth logs
-              ┌─────▼─────┐
-              │ CrowdSec  │ ← parses auth failures
-              └─────┬─────┘
-              ┌─────▼─────┐
-              │  Bouncer   │ ← enforces IP bans
-              └───────────┘
+     └───────────────────────────────────┘
 ```
 
 ### Services
 
 - **rustdesk** — `rustdesk/rustdesk-server-s6:1.1.15` on host network. Runs both `hbbs` (ID/rendezvous server) and `hbbr` (relay server) via s6-overlay. Binds ports 21115–21117 directly on the host. `ENCRYPTED_ONLY=1` is non-negotiable — unencrypted connections are rejected.
 
-- **caddy** — `caddy:2-alpine` on host network. Provides TLS termination for WebSocket traffic on ports 21443 (hbbs WS) and 21444 (hbbr WS), proxying to rustdesk's plain WebSocket ports 21118/21119 on localhost. Manages TLS certificates automatically via Let's Encrypt ACME.
-
-- **crowdsec** — `crowdsecurity/crowdsec:latest` on bridge network. Reads rustdesk container logs via Docker socket, parses auth failure lines with a custom YAML parser, and triggers ban decisions on repeated failures.
-
-- **bouncer** — `crowdsecurity/cs-firewall-bouncer:latest` on host network with `NET_ADMIN`/`NET_RAW` capabilities. Enforces CrowdSec ban decisions at the iptables/nftables level — banned IPs cannot reach any port on the host.
-
 ---
 
 ## Port Reference
 
-| Port  | Protocol | Service     | Route                          | Firewall |
-|-------|----------|-------------|--------------------------------|----------|
-| 80    | TCP      | Caddy       | ACME challenge / HTTP redirect | Open     |
-| 443   | TCP      | Caddy       | HTTPS                          | Open     |
-| 21115 | TCP      | hbbs        | Direct — NAT type test         | Open     |
-| 21116 | TCP+UDP  | hbbs        | Direct — peer registration     | Open     |
-| 21117 | TCP      | hbbr        | Direct — relay traffic         | Open     |
-| 21443 | TCP      | Caddy→hbbs  | TLS WebSocket (via Caddy)      | Open     |
-| 21444 | TCP      | Caddy→hbbr  | TLS WebSocket (via Caddy)      | Open     |
-
-Ports 21118 and 21119 are rustdesk's plain WebSocket ports — they are NOT exposed externally. Caddy listens on 21443/21444 and proxies to them on localhost.
+| Port  | Protocol | Service  | Purpose                    | Firewall |
+|-------|----------|----------|----------------------------|----------|
+| 21115 | TCP      | hbbs     | NAT type test              | Open     |
+| 21116 | TCP+UDP  | hbbs     | Peer registration          | Open     |
+| 21117 | TCP      | hbbr     | Relay traffic              | Open     |
 
 ---
 
@@ -175,35 +131,11 @@ Ports 21118 and 21119 are rustdesk's plain WebSocket ports — they are NOT expo
 In the RustDesk client:
 
 1. Go to **Settings → Network**
-2. Set **ID Server**: `<DOMAIN>:21443`
-3. Set **Relay Server**: `<DOMAIN>:21444`
+2. Set **ID Server**: `<DOMAIN>:21116`
+3. Set **Relay Server**: `<DOMAIN>:21117`
 4. Set **Key**: paste the output of `make keys-show`
 
 For single-server deployments, `DOMAIN` and `RELAY_HOST` are the same hostname. Both ID and relay server addresses point to the same host.
-
----
-
-## CrowdSec Setup
-
-CrowdSec starts without a bouncer key. After the first `make up-d`, generate the key and activate the bouncer:
-
-```sh
-# 1. Generate bouncer API key
-docker compose exec crowdsec cscli bouncers add rmm-bouncer
-
-# 2. Copy the generated key into .env
-# Edit .env and set: CROWDSEC_BOUNCER_KEY=<key>
-
-# 3. Restart to activate
-make down && make up-d
-```
-
-Verify CrowdSec is active:
-
-```sh
-docker compose exec crowdsec cscli metrics
-docker compose exec crowdsec cscli decisions list
-```
 
 ---
 
@@ -265,29 +197,6 @@ make keys-show
 
 Reconfigure all clients with the key shown. If you restored from backup, the key shown is the restored key.
 
-### TLS certificate not issued
-
-Caddy uses ACME (Let's Encrypt) to issue certificates. Requirements:
-1. `DOMAIN` must resolve to the server's public IP (verify with `dig +short $DOMAIN`)
-2. Ports 80 and 443 must be open from the internet (ACME HTTP-01 challenge)
-3. `TLS_EMAIL` must be set in `.env`
-
-Check Caddy logs: `docker compose logs caddy`
-
-### CrowdSec blocking legitimate IPs
-
-Review current bans:
-
-```sh
-docker compose exec crowdsec cscli decisions list
-```
-
-Remove a specific ban:
-
-```sh
-docker compose exec crowdsec cscli decisions delete --ip <ip-address>
-```
-
 ---
 
 ## Security Hardening Checklist
@@ -295,12 +204,9 @@ docker compose exec crowdsec cscli decisions delete --ip <ip-address>
 - [ ] `ENCRYPTED_ONLY=1` is set — enforced in `docker-compose.yml`, never remove this
 - [ ] Keys are in `secrets/` and excluded by `.gitignore` — never commit keys
 - [ ] `.env` is excluded by `.gitignore` — never commit credentials
-- [ ] Firewall restricts ports to the 7 listed in the Port Reference table
-- [ ] CrowdSec bouncer is running: `make status` shows bouncer healthy
-- [ ] `CROWDSEC_BOUNCER_KEY` is set in `.env` after initial setup
+- [ ] Firewall restricts ports to the 3 listed in the Port Reference table
 - [ ] Image tags are pinned: `s6:1.1.15` (not `latest`)
 - [ ] Backups are running: `make backup` in cron, archives copied offsite
-- [ ] Docker socket is mounted read-only: `:ro` on CrowdSec volume mount
 
 ---
 

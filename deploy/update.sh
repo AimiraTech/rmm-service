@@ -49,7 +49,7 @@ step_start "Extract configs"
 if [ "$config_changed" = true ]; then
     docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/ 2>"$ERR_LOG"
     step_ok "Extract configs"
-    info "Overwrites compose, Makefile, Caddyfile, scripts — preserves .env, data/, secrets/"
+    info "Overwrites compose, Makefile, scripts — preserves .env, data/, secrets/"
 else
     step_skip "Extract configs" "no config changes"
 fi
