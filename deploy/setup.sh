@@ -33,25 +33,34 @@ fi
 step_ok "Check Docker Compose v2"
 info "$(docker compose version)"
 
-# [3] Pull service images (pre-pull so first 'make up-d' is fast)
-step_start "Pull service images"
-cd "$INSTALL_DIR"
-if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
-    docker compose pull 2>"$ERR_LOG"
-    step_ok "Pull service images"
+# [3] Pull config image
+step_start "Pull config image"
+pull_output=$(docker pull "$IMAGE" 2>"$ERR_LOG")
+if echo "$pull_output" | grep -q "up to date"; then
+    step_skip "Pull config image" "already up to date"
 else
-    step_fail "Pull service images" "docker-compose.yml not found in $INSTALL_DIR"
-    print_footer "fail" "SETUP"
-    exit 1
+    step_ok "Pull config image"
 fi
+info "$IMAGE"
 
-# [4] Create runtime directories (mkdir -p is idempotent)
+# [4] Extract configs (overwrites compose, Makefile, scripts — preserves .env, data/, secrets/)
+step_start "Extract configs"
+docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/ 2>"$ERR_LOG"
+step_ok "Extract configs"
+
+# [5] Create runtime directories (mkdir -p is idempotent)
 step_start "Create runtime directories"
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets" "$INSTALL_DIR/backups"
 step_ok "Create runtime directories"
 info "data/ secrets/ backups/"
 
-# [5] Initialize .env (never overwrites existing)
+# [6] Pull service images (pre-pull so first 'make up-d' is fast)
+step_start "Pull service images"
+cd "$INSTALL_DIR"
+docker compose pull 2>"$ERR_LOG"
+step_ok "Pull service images"
+
+# [7] Initialize .env (never overwrites existing)
 step_start "Initialize environment config"
 if [ -f "$INSTALL_DIR/.env" ]; then
     step_skip "Initialize environment config" ".env already exists"

@@ -28,11 +28,13 @@ This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, at
 ## Deploy to EC2 (or any Linux VPS)
 
 ```sh
-# 1. Clone the repo
-git clone git@github.com:AimiraTech/rmm-service.git /home/aimiratech/rmm-service
+# 1. Create directory and copy deploy scripts
+mkdir -p /home/aimiratech/rmm-service
 cd /home/aimiratech/rmm-service
+git clone --filter=blob:none --sparse git@github.com:AimiraTech/rmm-service.git .
+git sparse-checkout set deploy/
 
-# 2. Run setup (installs Docker if needed, creates dirs, initializes .env)
+# 2. Run setup (installs Docker, pulls config image, extracts all configs, initializes .env)
 ./deploy/setup.sh
 
 # 3. Configure
@@ -63,19 +65,18 @@ make down && make up-d
 make status
 ```
 
+`setup.sh` pulls the config image from GHCR and extracts all files (docker-compose.yml, Makefile, Caddyfile, scripts, etc.) into the install directory. Only `deploy/` needs to exist beforehand.
+
 ---
 
 ## Updating
 
-When a new release is pushed, pull and run the update script:
-
 ```sh
 cd /home/aimiratech/rmm-service
-git pull
 ./deploy/update.sh
 ```
 
-The update script is idempotent — it backs up first, pulls new service images, and only recreates containers if something changed. Config files (`.env`, `data/`, `secrets/`) are never overwritten.
+The update script is idempotent — it pulls the latest config image, extracts new configs only if the image changed, pulls service images, and only recreates containers if something actually changed. Runtime data (`.env`, `data/`, `secrets/`) is never overwritten.
 
 **AWS Security Group inbound rules:**
 
