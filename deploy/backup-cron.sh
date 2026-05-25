@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Cron usage: 0 3 * * * /opt/rmm/deploy/backup-cron.sh >> /var/log/rmm-backup.log 2>&1
+# Cron usage: 0 3 * * * /home/aimiratech/rmm-service/deploy/backup-cron.sh >> /var/log/rmm-backup.log 2>&1
 
 print_header "rmm-service" "BACKUP"
 

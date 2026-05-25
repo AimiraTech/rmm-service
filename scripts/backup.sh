@@ -5,7 +5,7 @@ set -eu
 # Reads directly from ./data/ bind mount — no container dependency.
 # Run from the repository root: make backup
 
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/rmm}"
+BACKUP_DIR="${BACKUP_DIR:-/home/aimiratech/rmm-service/backups}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ARCHIVE_NAME="rmm-backup-${TIMESTAMP}.tar.gz"
