@@ -28,45 +28,38 @@ This repo provides automated TLS via Caddy, intrusion detection via CrowdSec, at
 ## Deploy to EC2 (or any Linux VPS)
 
 ```sh
-# 1. Install Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-exit
-# SSH back in for group to take effect
+# 1. Clone the repo
+git clone git@github.com:AimiraTech/rmm-service.git /opt/rmm
+cd /opt/rmm
 
-# 2. Create deploy directory
-mkdir -p /opt/rmm && cd /opt/rmm
+# 2. Run setup (installs Docker if needed, creates dirs, initializes .env)
+./deploy/setup.sh
 
-# 3. Pull config image and extract
-docker pull ghcr.io/aimiratech/rmm-service:latest
-docker run --rm -v /opt/rmm:/out ghcr.io/aimiratech/rmm-service:latest cp -r /app/. /out/
-
-# 4. Configure
-cp .env.example .env
+# 3. Configure
 nano .env   # Fill in: DOMAIN, RELAY_HOST, TLS_EMAIL
 
-# 5. Start all services
+# 4. Start all services
 make up-d
 
-# 6. Wait ~15s, verify everything is healthy
+# 5. Wait ~15s, verify everything is healthy
 make status
 
-# 7. Extract auto-generated keys to secrets/
+# 6. Extract auto-generated keys to secrets/
 make keys-extract
 
-# 8. First backup — BEFORE giving access to anyone
+# 7. First backup — BEFORE giving access to anyone
 make backup
 
-# 9. Get public key for client configuration
+# 8. Get public key for client configuration
 make keys-show
 
-# 10. Configure CrowdSec bouncer
+# 9. Configure CrowdSec bouncer
 docker compose exec crowdsec cscli bouncers add rmm-bouncer
 # Copy the key, add to .env as CROWDSEC_BOUNCER_KEY=<key>
 nano .env
 make down && make up-d
 
-# 11. Final verification
+# 10. Final verification
 make status
 ```
 
@@ -74,15 +67,15 @@ make status
 
 ## Updating
 
-When a new release is published, pull the latest config image and apply updates without touching runtime data:
+When a new release is pushed, pull and run the update script:
 
 ```sh
-# Pull latest config image
-docker pull ghcr.io/aimiratech/rmm-service:latest
-docker run --rm -v /opt/rmm:/out ghcr.io/aimiratech/rmm-service:latest cp -r /app/. /out/
-# This updates configs but preserves .env, data/, secrets/
-cd /opt/rmm && make update
+cd /opt/rmm
+git pull
+./deploy/update.sh
 ```
+
+The update script is idempotent — it backs up first, pulls new service images, and only recreates containers if something changed. Config files (`.env`, `data/`, `secrets/`) are never overwritten.
 
 **AWS Security Group inbound rules:**
 
