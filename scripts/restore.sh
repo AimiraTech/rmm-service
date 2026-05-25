@@ -59,14 +59,19 @@ else
     echo "No current public key found in secrets/."
 fi
 
-echo "Stopping rustdesk container..."
-docker compose stop rustdesk
+# Stop rustdesk only if running
+if docker compose ps rustdesk 2>/dev/null | grep -q "running"; then
+    echo "Stopping rustdesk container..."
+    docker compose stop rustdesk
+else
+    echo "rustdesk container not running, skipping stop."
+fi
 
 # Extract archive to temp directory
 TMPDIR=$(mktemp -d)
 tar -xzf "$ARCHIVE" -C "$TMPDIR"
 
-# Create target directories if needed
+# Create target directories if needed (mkdir -p is idempotent)
 mkdir -p secrets data
 
 # Copy keys to secrets/

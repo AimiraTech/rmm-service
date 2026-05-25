@@ -34,19 +34,19 @@ info "$(docker compose version)"
 
 # [3] Create install directory
 step_start "Create install directory"
-if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
-    step_skip "Create install directory" "already exists at $INSTALL_DIR"
-else
-    sudo mkdir -p "$INSTALL_DIR"
-    sudo chown "$USER:$USER" "$INSTALL_DIR"
-    step_ok "Create install directory"
-    info "$INSTALL_DIR"
-fi
+sudo mkdir -p "$INSTALL_DIR"
+sudo chown "$USER:$USER" "$INSTALL_DIR"
+step_ok "Create install directory"
+info "$INSTALL_DIR"
 
-# [4] Pull config image
+# [4] Pull config image (docker pull is a no-op if digest unchanged)
 step_start "Pull config image"
-docker pull "$IMAGE" 2>"$ERR_LOG" | tail -1
-step_ok "Pull config image"
+pull_output=$(docker pull "$IMAGE" 2>"$ERR_LOG")
+if echo "$pull_output" | grep -q "up to date"; then
+    step_skip "Pull config image" "already up to date"
+else
+    step_ok "Pull config image"
+fi
 info "$IMAGE"
 
 # [5] Extract configs
@@ -54,13 +54,13 @@ step_start "Extract configs to $INSTALL_DIR"
 docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/ 2>"$ERR_LOG"
 step_ok "Extract configs to $INSTALL_DIR"
 
-# [6] Create runtime directories
+# [6] Create runtime directories (mkdir -p is idempotent)
 step_start "Create runtime directories"
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets" "$INSTALL_DIR/backups"
 step_ok "Create runtime directories"
 info "data/ secrets/ backups/"
 
-# [7] Initialize .env
+# [7] Initialize .env (never overwrites existing)
 step_start "Initialize environment config"
 if [ -f "$INSTALL_DIR/.env" ]; then
     step_skip "Initialize environment config" ".env already exists"
