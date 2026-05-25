@@ -1,27 +1,25 @@
-# RMM Service — Dockerized RustDesk Server
+# RMM Service — MeshCentral Deployment
 
-A production-hardened Docker Compose deployment of [RustDesk Server OSS](https://github.com/rustdesk/rustdesk-server) for self-hosted remote access infrastructure. Designed for sysadmins managing a fleet of endpoints who need a secure, recoverable, operationally simple setup.
-
-This repo provides atomic backup/restore scripts and a Makefile operational interface — configured to deploy with a single `make up-d`.
+A production-ready Docker Compose deployment of [MeshCentral](https://github.com/Ylianst/MeshCentral) for self-hosted remote monitoring and management. Single-container setup with TLS offloaded to Apache/Virtualmin, named volumes for persistent storage, and a Makefile operational interface.
 
 ---
 
 ## Prerequisites
 
 - **Docker Engine 24+** with Docker Compose v2 (`docker compose` subcommand)
-- **Linux host** — `network_mode: host` is required for UDP hole-punch and real client IPs
-- **DNS A record** pointing your `DOMAIN` to the server's public IP
-- **Open firewall ports:**
-
-| Port  | Protocol | Purpose                                     |
-|-------|----------|---------------------------------------------|
-| 21115 | TCP      | hbbs — NAT type test                        |
-| 21116 | TCP+UDP  | hbbs — peer registration (MUST be both!)    |
-| 21117 | TCP      | hbbr — relay traffic                        |
+- **Linux host** with Apache and the following modules enabled:
+  - `mod_proxy`
+  - `mod_proxy_http`
+  - `mod_proxy_wstunnel`
+  - `mod_rewrite`
+  - `mod_headers`
+  - `mod_ssl`
+- **DNS A record** pointing your hostname (e.g. `rmm.aimiratech.com`) to the server's public IP
+- **TLS certificate** managed by Virtualmin/Let's Encrypt for the hostname
 
 ---
 
-## Deploy to EC2 (or any Linux VPS)
+## Quick Start
 
 ```sh
 # 1. Create directory and copy deploy scripts
@@ -30,112 +28,88 @@ cd /home/aimiratech/rmm-service
 git clone --filter=blob:none --sparse git@github.com:AimiraTech/rmm-service.git .
 git sparse-checkout set deploy/
 
-# 2. Run setup (installs Docker, pulls config image, extracts all configs, initializes .env)
+# 2. Run setup (pulls config image, extracts all configs, initializes .env)
 ./deploy/setup.sh
 
 # 3. Configure
-nano .env   # Fill in: DOMAIN, RELAY_HOST
+nano .env   # Set MESHCENTRAL_HOSTNAME to your actual domain
 
-# 4. Start all services
+# 4. Configure Apache VirtualHost (see section below)
+
+# 5. Start MeshCentral
 make up-d
 
-# 5. Wait ~15s, verify everything is healthy
+# 6. Wait ~60s for startup, verify health
 make status
 
-# 6. First backup — BEFORE giving access to anyone
+# 7. Create initial admin account
+make admin-create
+
+# 8. First backup
 make backup
-
-# 7. Get public key for client configuration
-make keys-show
 ```
 
-`setup.sh` pulls the config image from GHCR and extracts all files (docker-compose.yml, Makefile, scripts, etc.) into the install directory. Only `deploy/` needs to exist beforehand.
+`setup.sh` pulls the config image from GHCR, extracts all files (docker-compose.yml, Makefile, scripts/, config/, etc.) into the install directory, and generates a random `MESHCENTRAL_SESSION_KEY`. Only `deploy/` needs to exist beforehand.
 
 ---
 
-## Updating
+## Apache VirtualHost Configuration
+
+Enable required modules first:
 
 ```sh
-cd /home/aimiratech/rmm-service
-./deploy/update.sh
+a2enmod proxy proxy_http proxy_wstunnel rewrite headers ssl
+systemctl reload apache2
 ```
 
-The update script is idempotent — it pulls the latest config image, extracts new configs only if the image changed, pulls service images, and only recreates containers if something actually changed. Runtime data (`.env`, `data/`, `secrets/`) is never overwritten.
+Create `/etc/apache2/sites-available/rmm.aimiratech.com.conf` (or configure via Virtualmin):
 
-**AWS Security Group inbound rules:**
+```apache
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName rmm.aimiratech.com
 
-| Port  | Protocol | Source    | Purpose                        |
-|-------|----------|-----------|--------------------------------|
-| 22    | TCP      | Your IP   | SSH access                     |
-| 21115 | TCP      | 0.0.0.0/0 | NAT type test                  |
-| 21116 | TCP      | 0.0.0.0/0 | Peer registration              |
-| 21116 | UDP      | 0.0.0.0/0 | Peer registration (hole-punch) |
-| 21117 | TCP      | 0.0.0.0/0 | Relay traffic                  |
+    ProxyRequests Off
+    ProxyPreserveHost On
 
-`setup.sh` auto-generates Ed25519 keys on first install and writes them to `secrets/`. **Back up the keys immediately** — key loss requires reconfiguring every client in your fleet.
+    # ACME challenge must NOT be proxied
+    ProxyPass /.well-known/acme-challenge/ !
+
+    RequestHeader setifempty X-Forwarded-Proto https
+    RequestHeader setifempty X-Forwarded-Host rmm.aimiratech.com
+
+    # WebSocket rewrite (required for agent connections)
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule .* "ws://127.0.0.1:4430%{REQUEST_URI}" [P,L]
+
+    ProxyPass / http://127.0.0.1:4430/
+    ProxyPassReverse / http://127.0.0.1:4430/
+
+    ProxyTimeout 600
+
+    SSLEngine On
+    SSLCertificateFile /path/to/fullchain.pem
+    SSLCertificateKeyFile /path/to/privkey.pem
+</VirtualHost>
+</IfModule>
+```
+
+Replace `/path/to/fullchain.pem` and `/path/to/privkey.pem` with the actual certificate paths managed by Virtualmin/Let's Encrypt (typically under `/etc/letsencrypt/live/<domain>/`).
 
 ---
 
-## Quick Start (non-EC2)
+## Agent Deployment
 
-For any Linux host with Docker already installed:
+### Windows Agent
 
-```sh
-git clone git@github.com:AimiraTech/rmm-service.git
-cd rmm-service
-cp .env.example .env
-# Edit .env: DOMAIN, RELAY_HOST
-make up-d
-make status
-make keys-extract
-make keys-show
-```
+1. Log in to `https://rmm.aimiratech.com` as admin.
+2. Navigate to **My Meshes** → select your mesh → **Add Agent**.
+3. Download the Windows agent installer.
+4. Run the installer on target machines — it connects to `wss://rmm.aimiratech.com:443` automatically.
 
----
-
-## Architecture
-
-```
-                    Internet
-                       │
-          TCP/UDP 21115-21117
-                       │
-     ┌─────────────────▼─────────────────┐
-     │  rustdesk-server-s6:1.1.15        │  network_mode: host
-     │  ┌─────────┐  ┌─────────┐         │
-     │  │  hbbs   │  │  hbbr   │         │
-     │  │(ID/NAT) │  │(relay)  │         │
-     │  └─────────┘  └─────────┘         │
-     │       ENCRYPTED_ONLY=1            │
-     └───────────────────────────────────┘
-```
-
-### Services
-
-- **rustdesk** — `rustdesk/rustdesk-server-s6:1.1.15` on host network. Runs both `hbbs` (ID/rendezvous server) and `hbbr` (relay server) via s6-overlay. Binds ports 21115–21117 directly on the host. `ENCRYPTED_ONLY=1` is non-negotiable — unencrypted connections are rejected.
-
----
-
-## Port Reference
-
-| Port  | Protocol | Service  | Purpose                    | Firewall |
-|-------|----------|----------|----------------------------|----------|
-| 21115 | TCP      | hbbs     | NAT type test              | Open     |
-| 21116 | TCP+UDP  | hbbs     | Peer registration          | Open     |
-| 21117 | TCP      | hbbr     | Relay traffic              | Open     |
-
----
-
-## Client Configuration
-
-In the RustDesk client:
-
-1. Go to **Settings → Network**
-2. Set **ID Server**: `<DOMAIN>:21116`
-3. Set **Relay Server**: `<DOMAIN>:21117`
-4. Set **Key**: paste the output of `make keys-show`
-
-For single-server deployments, `DOMAIN` and `RELAY_HOST` are the same hostname. Both ID and relay server addresses point to the same host.
+The agent uses the standard HTTPS port (443) for all communication, making it transparent to most corporate firewalls.
 
 ---
 
@@ -147,82 +121,49 @@ For single-server deployments, `DOMAIN` and `RELAY_HOST` are the same hostname. 
 make backup
 ```
 
-Creates a timestamped archive in `BACKUP_DIR` (default: `/var/backups/rmm`) containing:
-- `id_ed25519` — Ed25519 private key
-- `id_ed25519.pub` — Ed25519 public key
-- `db_v2.sqlite3` — RustDesk peer database
-- `db_v2.sqlite3-wal` / `db_v2.sqlite3-shm` — SQLite WAL files (if present)
+Creates a timestamped archive in `BACKUP_DIR` (default: `/home/aimiratech/rmm-service/backups`) containing the `meshcentral-data` and `meshcentral-files` named volumes. The MeshCentral container does NOT need to be running.
 
 Archives older than `BACKUP_RETENTION_DAYS` (default: 30) are pruned automatically.
-
-**Back up keys before first production deployment.** Key loss requires reconfiguring every managed endpoint.
 
 ### Restore
 
 ```sh
-make restore FILE=/var/backups/rmm/rmm-backup-20260525-143022.tar.gz
+make restore FILE=/home/aimiratech/rmm-service/backups/rmm-backup-20260525-143022.tar.gz
 ```
 
-The script stops `rustdesk`, validates the archive, extracts keys to `secrets/`, and data to `data/`. It does NOT auto-start services.
+The script validates archive integrity, stops the `meshcentral` container, extracts volume contents, and exits without restarting. Run `make up-d` after restore.
+
+### Automated Backups via Cron
 
 ```sh
-# After restore:
-make up-d
+# Add to crontab: backup at 03:00 daily
+0 3 * * * /home/aimiratech/rmm-service/deploy/backup-cron.sh >> /var/log/rmm-backup.log 2>&1
 ```
 
 ---
 
-## Troubleshooting
-
-### Port 21116 must be BOTH TCP AND UDP
-
-The most common misconfiguration. RustDesk uses 21116/UDP for peer registration (UDP hole-punch). Opening only TCP will cause connection failures for NAT traversal. Open both:
-
-```
-ufw allow 21116/tcp
-ufw allow 21116/udp
-```
-
-### Hairpin NAT (LAN clients + server on same network)
-
-Clients on the same LAN as the server may fail to connect via the public hostname due to hairpin NAT limitations. Workaround: configure LAN clients to use the server's private IP directly, or configure split DNS so the domain resolves to the private IP from inside the LAN.
-
-### Key mismatch
-
-Clients configured with the wrong or an old public key will be rejected with a key verification error. Verify the current public key:
+## Update Process
 
 ```sh
-make keys-show
+cd /home/aimiratech/rmm-service
+./deploy/update.sh
 ```
 
-Reconfigure all clients with the key shown. If you restored from backup, the key shown is the restored key.
-
----
-
-## Security Hardening Checklist
-
-- [ ] `ENCRYPTED_ONLY=1` is set — enforced in `docker-compose.yml`, never remove this
-- [ ] Keys are in `secrets/` and excluded by `.gitignore` — never commit keys
-- [ ] `.env` is excluded by `.gitignore` — never commit credentials
-- [ ] Firewall restricts ports to the 3 listed in the Port Reference table
-- [ ] Image tags are pinned: `s6:1.1.15` (not `latest`)
-- [ ] Backups are running: `make backup` in cron, archives copied offsite
+The update script is idempotent — it compares the config image digest before and after pulling, extracts new configs only if changed, pulls the MeshCentral image, and only recreates the container if something actually changed. The `.env` file is never overwritten.
 
 ---
 
 ## Makefile Reference
 
-| Target          | Description                                          |
-|-----------------|------------------------------------------------------|
-| `make help`     | Show all available targets (default)                 |
-| `make up`       | Start all services in foreground                     |
-| `make up-d`     | Start all services in detached mode                  |
-| `make down`     | Stop all services                                    |
-| `make logs`     | Tail all service logs                                |
-| `make status`   | Show service health, ports, and public key           |
-| `make backup`   | Create backup archive of keys and database           |
-| `make restore`  | Restore from archive: `make restore FILE=<archive>`  |
-| `make update`   | Pull new images and recreate (backup runs first)     |
-| `make keys-extract` | Copy auto-generated keys from data/ to secrets/ |
-| `make keys-show`    | Display public key for client configuration      |
-| `make keys-generate`| Generate new keypair (destructive — all clients must be reconfigured) |
+| Target            | Description                                              |
+|-------------------|----------------------------------------------------------|
+| `make help`       | Show all available targets (default)                     |
+| `make up`         | Start MeshCentral in foreground                          |
+| `make up-d`       | Start MeshCentral in detached mode                       |
+| `make down`       | Stop MeshCentral                                         |
+| `make logs`       | Tail MeshCentral logs (Ctrl+C to stop)                   |
+| `make status`     | Show container status and health                         |
+| `make backup`     | Create backup archive of named volumes                   |
+| `make restore`    | Restore from archive: `make restore FILE=<archive>`      |
+| `make update`     | Pull new images and recreate via deploy/update.sh        |
+| `make admin-create` | Instructions to create the initial admin account       |

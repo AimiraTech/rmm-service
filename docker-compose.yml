@@ -1,27 +1,22 @@
 services:
-  rustdesk:
-    image: rustdesk/rustdesk-server-s6:${RUSTDESK_IMAGE_TAG:-1.1.15}
-    container_name: rustdesk
-    network_mode: host
-    environment:
-      RELAY: "${RELAY_HOST}"
-      ENCRYPTED_ONLY: "1"
-      RUST_LOG: "${RUST_LOG:-info}"
+  meshcentral:
+    image: ghcr.io/ylianst/meshcentral:${MESHCENTRAL_IMAGE_TAG:-latest}
+    container_name: meshcentral
+    ports:
+      - "127.0.0.1:4430:443"
     volumes:
-      - ./data:/data
-    secrets:
-      - key_pub
-      - key_priv
+      - meshcentral-data:/opt/meshcentral/meshcentral-data
+      - meshcentral-files:/opt/meshcentral/meshcentral-files
+      - meshcentral-backups:/opt/meshcentral/meshcentral-backups
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 21116 && nc -z localhost 21117"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:443/ || wget -qO- http://localhost:443/ > /dev/null"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 60s
 
-secrets:
-  key_pub:
-    file: ./secrets/key_pub
-  key_priv:
-    file: ./secrets/key_priv
+volumes:
+  meshcentral-data:
+  meshcentral-files:
+  meshcentral-backups:

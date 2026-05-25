@@ -43,62 +43,70 @@ else
 fi
 info "$IMAGE"
 
-# [4] Extract configs (overwrites compose, Makefile, scripts — preserves .env, data/, secrets/)
+# [4] Extract configs (overwrites compose, Makefile, scripts, config — preserves .env)
 step_start "Extract configs"
 docker run --rm -v "$INSTALL_DIR:/out" "$IMAGE" cp -r /app/. /out/ 2>"$ERR_LOG"
 step_ok "Extract configs"
+info "Overwrites compose, Makefile, scripts/, config/ — preserves .env"
 
-# [5] Create runtime directories (mkdir -p is idempotent)
+# [5] Create backups directory (idempotent)
 step_start "Create runtime directories"
-mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets" "$INSTALL_DIR/backups"
+BACKUP_DIR="${BACKUP_DIR:-/home/aimiratech/rmm-service/backups}"
+mkdir -p "$BACKUP_DIR"
 step_ok "Create runtime directories"
-info "data/ secrets/ backups/"
+info "backups: $BACKUP_DIR"
 
-# [6] Bootstrap Ed25519 keys (skip if already populated)
-step_start "Bootstrap Ed25519 keys"
-RUSTDESK_IMAGE="rustdesk/rustdesk-server-s6:${RUSTDESK_IMAGE_TAG:-1.1.15}"
-if [ -s "$INSTALL_DIR/secrets/key_pub" ] && [ -s "$INSTALL_DIR/secrets/key_priv" ]; then
-    step_skip "Bootstrap Ed25519 keys" "already present"
-else
-    : >"$INSTALL_DIR/secrets/key_pub"
-    : >"$INSTALL_DIR/secrets/key_priv"
-    docker run --rm -v "$INSTALL_DIR/data:/data" "$RUSTDESK_IMAGE" sleep 10 2>"$ERR_LOG" || true
-    if [ -f "$INSTALL_DIR/data/id_ed25519.pub" ] && [ -f "$INSTALL_DIR/data/id_ed25519" ]; then
-        cp "$INSTALL_DIR/data/id_ed25519.pub" "$INSTALL_DIR/secrets/key_pub"
-        cp "$INSTALL_DIR/data/id_ed25519" "$INSTALL_DIR/secrets/key_priv"
-        chmod 600 "$INSTALL_DIR/secrets/key_priv"
-        step_ok "Bootstrap Ed25519 keys"
-        info "Keys written to secrets/key_pub and secrets/key_priv"
-    else
-        step_fail "Bootstrap Ed25519 keys" "keys not generated — check $ERR_LOG"
-        print_footer "fail" "SETUP"
-        exit 1
-    fi
-fi
-
-# [7] Pull service images (pre-pull so first 'make up-d' is fast)
-step_start "Pull service images"
-cd "$INSTALL_DIR"
-docker compose pull 2>"$ERR_LOG"
-step_ok "Pull service images"
-
-# [8] Initialize .env (never overwrites existing)
+# [6] Initialize .env (never overwrites existing)
 step_start "Initialize environment config"
 if [ -f "$INSTALL_DIR/.env" ]; then
     step_skip "Initialize environment config" ".env already exists"
 else
     cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+    # Generate a random session key
+    SESSION_KEY="$(openssl rand -hex 32)"
+    # Replace the placeholder value in .env
+    sed -i "s/change-me-to-random-64-chars/${SESSION_KEY}/" "$INSTALL_DIR/.env"
     step_ok "Initialize environment config"
-    info "Created .env from template — edit before starting"
+    info "Created .env with random MESHCENTRAL_SESSION_KEY"
+    info "Edit .env to set MESHCENTRAL_HOSTNAME before starting"
 fi
+
+# [7] Generate config.json into the data volume from template
+step_start "Generate MeshCentral config"
+if ! [ -f "$INSTALL_DIR/config/config.json.template" ]; then
+    step_fail "Generate MeshCentral config" "template missing — re-extract configs"
+    print_footer "fail" "SETUP"
+    exit 1
+fi
+# Source .env for variable substitution
+set -a
+. "$INSTALL_DIR/.env"
+set +a
+GENERATED_CONFIG="$INSTALL_DIR/config/config.json"
+export MESHCENTRAL_HOSTNAME MESHCENTRAL_SESSION_KEY
+envsubst < "$INSTALL_DIR/config/config.json.template" > "$GENERATED_CONFIG"
+# Copy into the named volume via a temporary container
+docker run --rm \
+    -v meshcentral-data:/opt/meshcentral/meshcentral-data \
+    -v "$GENERATED_CONFIG:/tmp/config.json:ro" \
+    alpine cp /tmp/config.json /opt/meshcentral/meshcentral-data/config.json
+rm -f "$GENERATED_CONFIG"
+step_ok "Generate MeshCentral config"
+info "config.json written to meshcentral-data volume"
+
+# [8] Pull MeshCentral service image (pre-pull so first 'make up-d' is fast)
+step_start "Pull MeshCentral image"
+cd "$INSTALL_DIR"
+docker compose pull 2>"$ERR_LOG"
+step_ok "Pull MeshCentral image"
 
 print_footer "ok" "SETUP"
 
 echo "  Next steps:"
 echo ""
-printf "    ${CYAN}1.${RESET} nano .env              ${DIM}# DOMAIN, RELAY_HOST${RESET}\n"
-printf "    ${CYAN}2.${RESET} make up-d              ${DIM}# start services${RESET}\n"
+printf "    ${CYAN}1.${RESET} nano .env              ${DIM}# set MESHCENTRAL_HOSTNAME${RESET}\n"
+printf "    ${CYAN}2.${RESET} make up-d              ${DIM}# start MeshCentral${RESET}\n"
 printf "    ${CYAN}3.${RESET} make status            ${DIM}# verify health${RESET}\n"
-printf "    ${CYAN}4.${RESET} make backup            ${DIM}# first backup${RESET}\n"
-printf "    ${CYAN}5.${RESET} make keys-show         ${DIM}# public key for clients${RESET}\n"
+printf "    ${CYAN}4.${RESET} make admin-create      ${DIM}# create first admin account${RESET}\n"
+printf "    ${CYAN}5.${RESET} make backup            ${DIM}# first backup${RESET}\n"
 echo ""

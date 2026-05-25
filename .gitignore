@@ -1,20 +1,13 @@
 # User environment — never commit credentials
 .env
 
-# Runtime data — keys and database live here
+# Runtime data — bind mounts (legacy, unused in MeshCentral deployment)
 data/
 
-# Docker secrets — generated or restored, never source-controlled
-secrets/
-
-# SQLite artifacts — belt-and-suspenders (also inside data/)
+# SQLite artifacts
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
 
 # Local backup archives
 backups/
-
-# Caddy runtime (managed by Docker volumes, not repo)
-caddy-data/
-caddy-config/
