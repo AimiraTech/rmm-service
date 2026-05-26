@@ -9,6 +9,8 @@ services:
       - meshcentral-files:/opt/meshcentral/meshcentral-files
       - meshcentral-backups:/opt/meshcentral/meshcentral-backups
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:443/ || wget -qO- http://localhost:443/ > /dev/null"]
       interval: 30s
