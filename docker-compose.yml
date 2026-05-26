@@ -4,6 +4,13 @@ services:
     container_name: meshcentral
     ports:
       - "127.0.0.1:4430:443"
+    environment:
+      - HOSTNAME=${MESHCENTRAL_HOSTNAME}
+      - REVERSE_PROXY=127.0.0.1
+      - REVERSE_PROXY_TLS_PORT=443
+      - ALLOW_NEW_ACCOUNTS=false
+      - WEBRTC=false
+      - SES_KEY=${MESHCENTRAL_SESSION_KEY}
     volumes:
       - meshcentral-data:/opt/meshcentral/meshcentral-data
       - meshcentral-files:/opt/meshcentral/meshcentral-files

@@ -71,30 +71,7 @@ else
     info "Edit .env to set MESHCENTRAL_HOSTNAME before starting"
 fi
 
-# [7] Generate config.json into the data volume from template
-step_start "Generate MeshCentral config"
-if ! [ -f "$INSTALL_DIR/config/config.json.template" ]; then
-    step_fail "Generate MeshCentral config" "template missing — re-extract configs"
-    print_footer "fail" "SETUP"
-    exit 1
-fi
-# Source .env for variable substitution
-set -a
-. "$INSTALL_DIR/.env"
-set +a
-GENERATED_CONFIG="$INSTALL_DIR/config/config.json"
-export MESHCENTRAL_HOSTNAME MESHCENTRAL_SESSION_KEY
-envsubst < "$INSTALL_DIR/config/config.json.template" > "$GENERATED_CONFIG"
-# Copy into the named volume via a temporary container
-docker run --rm \
-    -v meshcentral-data:/opt/meshcentral/meshcentral-data \
-    -v "$GENERATED_CONFIG:/tmp/config.json:ro" \
-    alpine cp /tmp/config.json /opt/meshcentral/meshcentral-data/config.json
-rm -f "$GENERATED_CONFIG"
-step_ok "Generate MeshCentral config"
-info "config.json written to meshcentral-data volume"
-
-# [8] Pull MeshCentral service image (pre-pull so first 'make up-d' is fast)
+# [7] Pull MeshCentral service image (pre-pull so first 'make up-d' is fast)
 step_start "Pull MeshCentral image"
 cd "$INSTALL_DIR"
 docker compose pull 2>"$ERR_LOG"
