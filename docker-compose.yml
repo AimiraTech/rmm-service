@@ -6,8 +6,10 @@ services:
       - "127.0.0.1:4430:443"
     environment:
       - HOSTNAME=${MESHCENTRAL_HOSTNAME}
-      - REVERSE_PROXY=127.0.0.1
+      - REVERSE_PROXY=${MESHCENTRAL_HOSTNAME}
       - REVERSE_PROXY_TLS_PORT=443
+      - TLS_OFFLOAD=true
+      - TRUSTED_PROXY=127.0.0.1
       - ALLOW_NEW_ACCOUNTS=false
       - WEBRTC=false
       - DYNAMIC_CONFIG=true
