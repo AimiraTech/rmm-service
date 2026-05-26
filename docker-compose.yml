@@ -1,6 +1,6 @@
 services:
   meshcentral:
-    image: ghcr.io/ylianst/meshcentral:${MESHCENTRAL_IMAGE_TAG:-latest}
+    image: ghcr.io/ylianst/meshcentral:${MESHCENTRAL_IMAGE_TAG:-latest-slim}
     container_name: meshcentral
     ports:
       - "127.0.0.1:4430:443"
