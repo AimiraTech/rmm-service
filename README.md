@@ -1,6 +1,8 @@
 # RMM Service — MeshCentral Deployment
 
-A production-ready Docker Compose deployment of [MeshCentral](https://github.com/Ylianst/MeshCentral) for self-hosted remote monitoring and management. Single-container setup with TLS offloaded to Apache/Virtualmin, named volumes for persistent storage, and a Makefile operational interface.
+A production-ready Docker Compose deployment of [MeshCentral](https://github.com/Ylianst/MeshCentral) for self-hosted remote monitoring and management. Single-container setup using the `meshcentral/meshcentral:latest-slim` image from Docker Hub, TLS offloaded to Apache/Virtualmin, named volumes for persistent storage, and a Makefile operational interface.
+
+Configuration is driven entirely via environment variables (`DYNAMIC_CONFIG=true`) — no `config.json` template is used. Key variables: `HOSTNAME`, `REVERSE_PROXY`, `TLS_OFFLOAD`, `TRUSTED_PROXY`.
 
 ---
 
@@ -110,6 +112,28 @@ Replace `/path/to/fullchain.pem` and `/path/to/privkey.pem` with the actual cert
 4. Run the installer on target machines — it connects to `wss://rmm.aimiratech.com:443` automatically.
 
 The agent uses the standard HTTPS port (443) for all communication, making it transparent to most corporate firewalls.
+
+### Windows 11 IoT Enterprise LTSC 24H2 — Installer Workaround
+
+The GUI installer fails on Windows 11 IoT Enterprise LTSC 24H2 with "the specified procedure could not be found". This is a known issue ([#6383](https://github.com/Ylianst/MeshCentral/issues/6383), [#7606](https://github.com/Ylianst/MeshCentral/issues/7606)) caused by WMIC being removed in 24H2, which the installer depends on for system inventory.
+
+**Option A — silent install (recommended):**
+
+Open CMD as administrator and run:
+
+```cmd
+meshagent.exe -fullinstall -nomesh
+```
+
+This bypasses the WMIC dependency entirely.
+
+**Option B — restore WMIC first, then use normal installer:**
+
+```cmd
+DISM /Online /Add-Capability /CapabilityName:WMIC~~~~
+```
+
+After DISM completes, run the standard GUI installer as usual.
 
 ---
 
