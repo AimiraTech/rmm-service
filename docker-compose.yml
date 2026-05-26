@@ -10,6 +10,7 @@ services:
       - REVERSE_PROXY_TLS_PORT=443
       - ALLOW_NEW_ACCOUNTS=false
       - WEBRTC=false
+      - DYNAMIC_CONFIG=true
       - SES_KEY=${MESHCENTRAL_SESSION_KEY}
     volumes:
       - meshcentral-data:/opt/meshcentral/meshcentral-data
